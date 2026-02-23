@@ -3,6 +3,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const activitySelect = document.getElementById("activity");
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
+  let pendingUnregisterKey = null;
 
   // Function to fetch activities from API
   async function fetchActivities() {
@@ -21,8 +22,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const spotsLeft = details.max_participants - details.participants.length;
         const participantsList = details.participants
-          .map(
-            (participant) => `
+          .map((participant) => {
+            const participantKey = `${name}::${participant}`;
+            const isPendingUnregister = pendingUnregisterKey === participantKey;
+
+            if (isPendingUnregister) {
+              return `
+                <li class="participant-item participant-item-confirming">
+                  <span>${participant}</span>
+                  <div class="participant-actions-inline">
+                    <button
+                      class="participant-confirm-btn"
+                      data-activity="${name}"
+                      data-email="${participant}"
+                    >
+                      Confirm
+                    </button>
+                    <button class="participant-cancel-btn">Cancel</button>
+                  </div>
+                </li>
+              `;
+            }
+
+            return `
               <li class="participant-item">
                 <span>${participant}</span>
                 <button
@@ -34,8 +56,8 @@ document.addEventListener("DOMContentLoaded", () => {
                   🗑️
                 </button>
               </li>
-            `
-          )
+            `;
+          })
           .join("");
 
         activityCard.innerHTML = `
@@ -110,20 +132,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
   activitiesList.addEventListener("click", async (event) => {
     const removeButton = event.target.closest(".participant-remove-btn");
-    if (!removeButton) {
+    const confirmButton = event.target.closest(".participant-confirm-btn");
+    const cancelButton = event.target.closest(".participant-cancel-btn");
+
+    if (removeButton) {
+      const activity = removeButton.dataset.activity;
+      const email = removeButton.dataset.email;
+      pendingUnregisterKey = `${activity}::${email}`;
+      await fetchActivities();
       return;
     }
 
-    const activity = removeButton.dataset.activity;
-    const email = removeButton.dataset.email;
-
-    const shouldUnregister = window.confirm(
-      `Unregister ${email} from ${activity}?`
-    );
-
-    if (!shouldUnregister) {
+    if (cancelButton) {
+      pendingUnregisterKey = null;
+      await fetchActivities();
       return;
     }
+
+    if (!confirmButton) {
+      return;
+    }
+
+    const activity = confirmButton.dataset.activity;
+    const email = confirmButton.dataset.email;
 
     try {
       const response = await fetch(
@@ -136,6 +167,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const result = await response.json();
 
       if (response.ok) {
+        pendingUnregisterKey = null;
         messageDiv.textContent = result.message;
         messageDiv.className = "success";
         await fetchActivities();
